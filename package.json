@@ -1,0 +1,26 @@
+{
+  "name": "afe",
+  "version": "1.0.0",
+  "description": "Node js embedded template engine.",
+  "main": "afe.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ecmas/afe.git"
+  },
+  "keywords": [
+    "afe",
+    "Nodejs",
+    "template",
+    "engine",
+    "embedded"
+  ],
+  "author": "Ecmas",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/ecmas/afe/issues"
+  },
+  "homepage": "https://github.com/ecmas/afe#readme"
+}
