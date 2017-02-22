@@ -28,7 +28,7 @@ if (condition) {
   ?><b><?
 }
 ```
-Note: ?: oprator will **not** work, 
+Note: ?: operator will **not** work, 
 like:
 ```
 <? condition ? ?>err<? : ?>err<? ; ?>
