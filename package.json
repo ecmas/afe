@@ -1,6 +1,6 @@
 {
   "name": "afe",
-  "version": "1.0.0",
+  "version": "1.2.0",
   "description": "Node js embedded template engine.",
   "main": "afe.js",
   "scripts": {
@@ -18,7 +18,7 @@
     "embedded"
   ],
   "author": "Ecmas",
-  "license": "ISC",
+  "license": "MIT",
   "bugs": {
     "url": "https://github.com/ecmas/afe/issues"
   },

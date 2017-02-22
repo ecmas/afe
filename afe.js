@@ -6,10 +6,69 @@ const vm = require('vm');
 
 const AFE = {
 	TAG: '(<??|??>|<?|?>)'
+	, extname: '.afe'
 	, BOM: /^\uFEFF/
 	, mode: { js: 0, html: 1 }
+	, sandbox: vm.createContext()
 }
-var cache = {};
+var cache = {};	//	Used for cache vm.Script objects, key is the script full path.
+
+function reset() {
+	cache = {};
+	AFE.sandbox = vm.createContext();
+}
+
+//	this will run in sandbox.
+function ctxInitFunc() {
+	const escapeMap = {
+		'<': '&lt;'
+		, '>': '&gt;'
+		, '"': '&#34;'
+		, "'": '&#39;'
+		, '&': '&amp;'
+	};
+	function escapeHtml(raw) {
+		var mark = /[&<>\'"]/g;
+		function replacer(c) {
+			return escapeMap[c] || c;
+		}
+		return String(raw).replace(mark, replacer);
+	}
+	var __html = [];	//	output data.
+	var __cache = {};	//	function cache.
+	var __this = {};
+	function __append(raw) { __html.push(raw); }
+	function html(raw) { __html.push(raw); }	//	raw echo.
+	function echo(raw) { __html.push(escapeHtml(raw)); }	//	escaped echo
+	function include(f, arg) {
+		var func = __cache[f]	//	TODO: case insensitive problem.
+			, jsc, module;
+		if (!func) {
+			func = {
+				jsc: __include(f)
+				, module: { exports: {} }
+			};
+			__cache[f] = func;
+		}
+		jsc = func.jsc;
+		module = func.module;
+		if ('function' === typeof jsc) {
+			//	disable global access via |this|.
+			jsc.call(__this, arg, $, __append, echo, html, include, module, module.exports, console);
+			return module.exports;
+		}
+		throw jsc;
+	}
+
+	if ('function' === typeof blk) {
+		blk();
+	}
+	include(__first_afe);
+	return __html.join('');
+}
+
+const init_src = `(${ctxInitFunc.toString()})();`;
+const jscInitGlobal = new vm.Script(init_src);	//	init for each render.
 
 /**
  * renderFile
@@ -19,11 +78,19 @@ var cache = {};
  * @param {Function}	callback
  */
 function renderFile() {
-	if (arguments.length < 2) { return; }
+	if (arguments.length < 2) { throw new Error('renderFile argument error.'); }
 	var file = arguments[0]
-		, data = (arguments.length > 2) ? arguments[1] : {}
+		, $ = (arguments.length > 2) ? arguments[1] : {}
 		, opt = (arguments.length > 3) ? arguments[2] : {}
 		, cb = arguments[Math.min(3, arguments.length - 1)];
+	try {
+		render(file, $, opt, cb);
+	} catch (e) {
+		cb(e);
+	}
+}
+
+function render(file, $, opt, cb) {
 	defaultOptions(opt);
 	run();
 
@@ -33,11 +100,11 @@ function renderFile() {
 			if (file.indexOf('..') >= 0) { return new Error('Parent dir was disabled.'); }
 			file = Path.join(opt.root, file);
 			if (!Path.extname(file)) {
-				file += '.afe';
+				file += AFE.extname;
 			}
 			var cjs = cache[file]
 			if (!cjs) {
-				console.log('==>load afe:', file);
+				//console.log('==>load afe:', file);
 				try {
 					var data = fs.readFileSync(file);
 				} catch (e) {
@@ -48,27 +115,19 @@ function renderFile() {
 				var afe = data.toString().replace(AFE.BOM, '');
 				var js = coding(cut(afe));
 
-				//console.log(js);
 				cjs = new vm.Script(js);
 				cache[file] = cjs;
 			}
-			cjs.runInContext(opt.ctx);
-			//return js;
+			return cjs.runInContext(opt.ctx);
 		};
-		/*opt.internals.__end = function (err, html) {
-			cb(err, html);
-		};*/
-		Object.assign(opt.ctx, opt.internals);
 		if (!vm.isContext(opt.ctx)) {
-			console.log(vm.isContext(opt.ctx));
-			vm.createContext(opt.ctx);
+			opt.ctx = AFE.sandbox;
 		}
+		Object.assign(opt.ctx, opt.internals);
 		opt.ctx.global = opt.ctx;
+		opt.ctx.$ = $;
 		var html = Launch(opt.ctx);
 		cb(void 0, html);
-		//var fn = new Function('$, escapeHtml, include', js);
-		//var rv = fn.call(opt.ctx, {}, escapeHtml, function () { });
-		//console.log(rv);
 	}
 	function cut(afe) {
 		var delimiter = opt.delimiter.replace(/[|\\{}()[\]^$+*?.]/g, '\\$&');
@@ -86,13 +145,13 @@ function renderFile() {
 		if (last < afe.length) {
 			arr.push(afe.slice(last));
 		}
-		//console.log('--arr:', arr);
 		return arr;
 	}
 	function coding(blocks) {
 		var d = opt.delimiter;
 		var embed = false;	//	true for js mode, false for html mode.
 		var code = [];
+		__emit(`(function($$, $, __append, echo, html, include, module, exports, console){`);
 		blocks.forEach(function (blk) {
 			switch (blk) {
 				case '<' + d:	//	entering js mode.
@@ -117,7 +176,7 @@ function renderFile() {
 					if (embed) {
 						__emit(blk);
 						//if (/\/\/.*$/.test(blk)) {
-						__emit('\n');
+						//__emit('\n');
 						//}
 					} else {
 						__append(blk);
@@ -125,6 +184,7 @@ function renderFile() {
 					break;
 			}
 		});
+		__emit('})');
 		function __emit(js) {
 			code.push(js);
 		}
@@ -135,53 +195,23 @@ function renderFile() {
 				.replace(/"/g, '\\"');
 			code.push('__append("' + html + '");');
 		}
-		return code.join('');
+		return code.join('\n');
+	}
+	function defaultOptions(opt) {
+		opt.root = opt.root || Path.join(__dirname, 'views');
+		opt.delimiter = opt.delimiter || '?';
+		opt.ctx = opt.ctx || {};
+		//opt.timeout = opt.timeout || 1000 * 9;
+		opt.internals = {
+			console: console
+		};
+	}
+
+	function Launch(ctx) {
+		return jscInitGlobal.runInContext(ctx);
 	}
 }
 
-function defaultOptions(opt) {
-	opt.root = opt.root || Path.join(__dirname, 'views');
-	opt.delimiter = opt.delimiter || '?';
-	opt.ctx = opt.ctx || {};
-	opt.timeout = opt.timeout || 1000 * 9;
-	opt.internals = {
-		escapeHtml: escapeHtml
-		, console: console
-	};
-}
-const init_src = `
-var __html = [];
-function __append(raw) { __html.push(raw); }
-function html(raw) { __html.push(raw); }
-function echo(raw) { __html.push(escapeHtml(raw)); }
-function include(f) {
-	var jsc = __include(f);
-	if (jsc) {
-		//echo(jsc.toString());
-	}
-}
-
-include(__first_afe);
-global.__html.join('');
-`;
-var jscInitGlobal = new vm.Script(init_src);
-function Launch(ctx) {
-	return jscInitGlobal.runInContext(ctx);
-}
-
-function escapeHtml(raw) {
-	const escapeMap = {
-		'<': '&lt;'
-		, '>': '&gt;'
-		, '"': '&#34;'
-		, "'": '&#39;'
-		, '&': '&amp;'
-	};
-	var mark = /[&<>\'"]/g;
-	function replacer(c) {
-		return escapeMap[c] || c;
-	}
-	return String(raw).replace(mark, replacer);
-}
 
 module.exports.renderFile = renderFile;
+module.exports.reset = reset;
