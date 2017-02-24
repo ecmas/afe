@@ -20,6 +20,7 @@ function reset() {
 
 //	this will run in sandbox.
 function ctxInitFunc() {
+	'use strict';
 	const escapeMap = {
 		'<': '&lt;'
 		, '>': '&gt;'
@@ -38,7 +39,7 @@ function ctxInitFunc() {
 	var __cache = {};	//	function cache.
 	var __this = {};
 	function __append(raw) { __html.push(raw); }
-	function html(raw) { __html.push(raw); }	//	raw echo.
+	//function html(raw) { __html.push(raw); }	//	raw echo.
 	function echo(raw) { __html.push(escapeHtml(raw)); }	//	escaped echo
 	function include(f, arg) {
 		var func = __cache[f]	//	TODO: case insensitive problem.
@@ -53,15 +54,10 @@ function ctxInitFunc() {
 		jsc = func.jsc;
 		module = func.module;
 		if ('function' === typeof jsc) {
-			//	disable global access via |this|.
-			jsc.call(__this, arg, $, __append, echo, html, include, module, module.exports, console);
+			jsc.call(__this, arg, $, __append, __append, echo, include, module, module.exports, console);
 			return module.exports;
 		}
 		throw jsc;
-	}
-
-	if ('function' === typeof blk) {
-		blk();
 	}
 	include(__first_afe);
 	return __html.join('');
@@ -102,20 +98,22 @@ function render(file, $, opt, cb) {
 			if (!Path.extname(file)) {
 				file += AFE.extname;
 			}
-			var cjs = cache[file]
+			var cjs = cache[file];
 			if (!cjs) {
 				//console.log('==>load afe:', file);
 				try {
 					var data = fs.readFileSync(file);
 				} catch (e) {
-					console.log('readFileSync error:', e);
-					console.log(e instanceof Error);
+					console.warn('readFileSync error:', e);
 					return e;
 				}
 				var afe = data.toString().replace(AFE.BOM, '');
 				var js = coding(cut(afe));
-
-				cjs = new vm.Script(js);
+				if (opt.debug) {
+					console.log(file);
+					console.log(js);
+				}
+				cjs = new vm.Script(js, { filename: file });
 				cache[file] = cjs;
 			}
 			return cjs.runInContext(opt.ctx);
@@ -124,7 +122,7 @@ function render(file, $, opt, cb) {
 			opt.ctx = AFE.sandbox;
 		}
 		Object.assign(opt.ctx, opt.internals);
-		opt.ctx.global = opt.ctx;
+		//opt.ctx.global = opt.ctx;
 		opt.ctx.$ = $;
 		var html = Launch(opt.ctx);
 		cb(void 0, html);
@@ -151,7 +149,8 @@ function render(file, $, opt, cb) {
 		var d = opt.delimiter;
 		var embed = false;	//	true for js mode, false for html mode.
 		var code = [];
-		__emit(`(function($$, $, __append, echo, html, include, module, exports, console){`);
+		__emit(`(function($$, $, __append, html, echo, include, module, exports, console){`);
+		__emit(`'use strict';`);
 		blocks.forEach(function (blk) {
 			switch (blk) {
 				case '<' + d:	//	entering js mode.
@@ -184,11 +183,28 @@ function render(file, $, opt, cb) {
 					break;
 			}
 		});
-		__emit('})');
+		__emit('});');
 		function __emit(js) {
 			code.push(js);
 		}
 		function __append(html) {
+			switch (typeof html) {
+				case 'undefined':
+					return;
+				case 'string':
+					if (!html) {	//	skip zero length strings.
+						return;
+					}
+					break;
+				//case 'boolean':
+				//case 'number':
+				//case 'object':
+				//case 'function':
+				//case 'symbol':
+				default:
+					html = String(html);
+					break;
+			}
 			html = html.replace(/\\/g, '\\\\')
 				.replace(/\n/g, '\\n')
 				.replace(/\r/g, '\\r')
@@ -203,7 +219,7 @@ function render(file, $, opt, cb) {
 		opt.ctx = opt.ctx || {};
 		//opt.timeout = opt.timeout || 1000 * 9;
 		opt.internals = {
-			console: console
+			console: (opt.debug ? console : undefined)
 		};
 	}
 
