@@ -120,3 +120,9 @@ afe.renderFile('test.afe', data, options, function (err, html) {
 // clear cache and vm context.
 afe.reset();  
 ```
+
+#### options
+  * `root` Root folder of the script. The parent dir `..` was disabled.
+All `include` in the template are relative to root path.
+  * `debug` Enable `console` in the template script, and generated code will dump to the terminal.
+  * `delimiter` Character to use with angle brackets for open/close, default is `?`, `<? ?>`.
